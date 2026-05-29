@@ -17,5 +17,5 @@ pub enum ErrorCode {
     #[msg("Invalid rewards bps")]
     InvalidRewardsBps,
     #[msg("Invalid staked count")]
-    InvalidStakedCount
+    InvalidStakedCount,
 }

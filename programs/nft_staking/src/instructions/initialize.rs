@@ -49,7 +49,7 @@ impl<'info> Initialize<'info> {
             freeze_period,
             rewards_bump: bumps.rewards_mint,
             bump: bumps.config,
-            staked_count: 0
+            staked_count: 0,
         });
         Ok(())
     }

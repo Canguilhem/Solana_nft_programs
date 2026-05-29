@@ -132,11 +132,11 @@ impl<'info> Stake<'info> {
             .init_authority(PluginAuthority::UpdateAuthority)
             .invoke()?;
 
-            self.config.staked_count = self
+        self.config.staked_count = self
             .config
             .staked_count
             .checked_add(1)
-            .ok_or(ErrorCode::InvalidStakedCount)?; 
+            .ok_or(ErrorCode::InvalidStakedCount)?;
 
         Ok(())
     }

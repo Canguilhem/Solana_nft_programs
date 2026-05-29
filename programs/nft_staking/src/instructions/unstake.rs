@@ -213,10 +213,10 @@ impl<'info> Unstake<'info> {
         }
 
         self.config.staked_count = self
-    .config
-    .staked_count
-    .checked_sub(1)
-    .ok_or(ErrorCode::InvalidStakedCount)?; 
+            .config
+            .staked_count
+            .checked_sub(1)
+            .ok_or(ErrorCode::InvalidStakedCount)?;
         Ok(())
     }
 }

@@ -2,10 +2,10 @@ use anchor_lang::prelude::*;
 use anchor_spl::token_interface::TokenInterface;
 use mpl_core::{instructions::TransferV1CpiBuilder, programs::MPL_CORE_ID};
 
-use crate::{error::ErrorCode, Listing, LISTING};
+use crate::{Listing, LISTING};
 
 #[derive(Accounts)]
-pub struct List<'info> {
+pub struct Delist<'info> {
     #[account(mut)]
     pub maker: Signer<'info>,
 
@@ -18,11 +18,12 @@ pub struct List<'info> {
     pub collection: Option<UncheckedAccount<'info>>,
 
     #[account(
-        init,
-        payer=maker,
+        mut,
+        close= maker,
         seeds=[LISTING, asset.key().as_ref()],
         bump,
-        space= Listing::DISCRIMINATOR.len() + Listing::INIT_SPACE
+        has_one= asset,
+        has_one= maker
     )]
     pub listing: Account<'info, Listing>,
 
@@ -34,26 +35,21 @@ pub struct List<'info> {
     pub token_program: Interface<'info, TokenInterface>,
 }
 
-impl<'info> List<'info> {
-    pub fn list_asset(&mut self, price: u64, bumps: &ListBumps) -> Result<()> {
-        require!(price > 0, ErrorCode::InvalidPrice);
-        // register listing
-        self.listing.set_inner(Listing {
-            maker: self.maker.key(),
-            asset: self.asset.key(),
-            price,
-            bump: bumps.listing,
-        });
+impl<'info> Delist<'info> {
+    pub fn delist_asset(&mut self) -> Result<()> {
+        let asset_key = self.asset.key();
+
+        let signer_seeds: &[&[&[u8]]] = &[&[b"listing", asset_key.as_ref(), &[self.listing.bump]]];
 
         // transfer ownership
         TransferV1CpiBuilder::new(&self.mpl_core_program.to_account_info())
             .asset(&self.asset.to_account_info())
             .collection(self.collection.as_ref().map(|a| a.as_ref()))
             .payer(&self.maker.to_account_info())
-            .authority(Some(&self.maker.to_account_info()))
-            .new_owner(&self.listing.to_account_info())
+            .authority(Some(&self.listing.to_account_info()))
+            .new_owner(&self.maker.to_account_info())
             .system_program(Some(&self.system_program.to_account_info()))
-            .invoke()?;
+            .invoke_signed(signer_seeds)?;
 
         Ok(())
     }

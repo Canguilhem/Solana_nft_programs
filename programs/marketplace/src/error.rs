@@ -6,4 +6,8 @@ pub enum ErrorCode {
     InvalidFeeAmount,
     #[msg("MathError")]
     MathError,
+    #[msg("Invalid price")]
+    InvalidPrice,
+    #[msg("Unauthorized")]
+    Unauthorized,
 }
