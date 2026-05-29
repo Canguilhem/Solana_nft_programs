@@ -7,7 +7,7 @@ use mpl_core::{
     instructions::{CreateCollectionV2Builder, CreateV2Builder},
 };
 
-use super::constants::{MARKETPLACE, MPL_CORE_ID, REWARDS, TREASURY};
+use super::constants::{MARKETPLACE, MPL_CORE_ID, OFFER, OFFER_VAULT, REWARDS, TREASURY};
 use super::instructions::initialize_ix;
 
 pub fn assert_nft_owner(ctx: &AnchorContext, asset: Pubkey, expected_owner: Pubkey) {
@@ -50,6 +50,65 @@ pub fn init_marketplace(ctx: &mut AnchorContext) -> (Pubkey, Pubkey, Pubkey) {
         .assert_success();
 
     (marketplace, treasury, rewards_mint)
+}
+
+pub fn offer_pdas(asset: Pubkey, maker: Pubkey, payment_mint: Pubkey) -> (Pubkey, Pubkey) {
+    let (offer, _) = Pubkey::find_program_address(
+        &[
+            OFFER,
+            asset.as_ref(),
+            maker.as_ref(),
+            payment_mint.as_ref(),
+        ],
+        &marketplace::id(),
+    );
+    let (offer_vault, _) = Pubkey::find_program_address(
+        &[
+            OFFER_VAULT,
+            asset.as_ref(),
+            maker.as_ref(),
+            payment_mint.as_ref(),
+        ],
+        &marketplace::id(),
+    );
+    (offer, offer_vault)
+}
+
+pub fn offer_vault_ata(vault_authority: Pubkey, payment_mint: Pubkey) -> Pubkey {
+    anchor_spl::associated_token::get_associated_token_address(&vault_authority, &payment_mint)
+}
+
+pub fn treasury_token_pdas(marketplace: Pubkey, payment_mint: Pubkey) -> (Pubkey, Pubkey) {
+    let (authority, _bump) = Pubkey::find_program_address(
+        &[TREASURY, marketplace.as_ref(), payment_mint.as_ref()],
+        &marketplace::id(),
+    );
+    let ata = anchor_spl::associated_token::get_associated_token_address(&authority, &payment_mint);
+    (authority, ata)
+}
+
+pub fn create_payment_mint(ctx: &mut AnchorContext, authority: &Keypair, decimals: u8) -> Pubkey {
+    ctx.svm
+        .create_token_mint(authority, decimals)
+        .unwrap()
+        .pubkey()
+}
+
+pub fn fund_token_account(
+    ctx: &mut AnchorContext,
+    mint: &Pubkey,
+    owner: &Keypair,
+    authority: &Keypair,
+    amount: u64,
+) -> Pubkey {
+    let ata = ctx
+        .svm
+        .create_associated_token_account(mint, owner)
+        .unwrap();
+    ctx.svm
+        .mint_to(mint, &ata, authority, amount)
+        .unwrap();
+    ata
 }
 
 pub fn get_pdas(market_name: &str) -> (Pubkey, Pubkey, Pubkey) {

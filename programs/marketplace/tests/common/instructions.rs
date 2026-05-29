@@ -105,6 +105,202 @@ pub fn delist_ix(
         .unwrap()
 }
 
+pub fn list_spl_ix(
+    ctx: &AnchorContext,
+    maker: Pubkey,
+    asset: Pubkey,
+    collection: Option<Pubkey>,
+    listing: Pubkey,
+    payment_mint: Pubkey,
+    price: u64,
+) -> Instruction {
+    ctx.program()
+        .accounts(marketplace::accounts::ListSpl {
+            maker,
+            asset,
+            collection,
+            payment_mint,
+            listing,
+            mpl_core_program: MPL_CORE_ID,
+            system_program: system_program::ID,
+            token_program: token::ID,
+        })
+        .args(marketplace::instruction::ListSpl { price })
+        .instruction()
+        .unwrap()
+}
+
+pub fn buy_spl_ix(
+    ctx: &mut AnchorContext,
+    maker: Pubkey,
+    taker: &Keypair,
+    asset: Pubkey,
+    collection: Option<Pubkey>,
+    listing: Pubkey,
+    marketplace: Pubkey,
+    payment_mint: Pubkey,
+    taker_payment_ata: Pubkey,
+    treasury_authority: Pubkey,
+    treasury_ata: Pubkey,
+    rewards_mint: Pubkey,
+    taker_rewards_ata: Pubkey,
+) -> Instruction {
+    let maker_payment_ata =
+        associated_token::get_associated_token_address(&maker, &payment_mint);
+
+    ctx.program()
+        .accounts(marketplace::accounts::BuySpl {
+            taker: taker.pubkey(),
+            maker,
+            asset,
+            collection,
+            marketplace,
+            listing,
+            payment_mint,
+            taker_payment_ata,
+            maker_payment_ata,
+            treasury_authority,
+            treasury_ata,
+            rewards_mint,
+            taker_rewards_ata,
+            mpl_core_program: MPL_CORE_ID,
+            associated_token_program: associated_token::ID,
+            system_program: system_program::ID,
+            token_program: token::ID,
+        })
+        .args(marketplace::instruction::BuySpl {})
+        .instruction()
+        .unwrap()
+}
+
+pub fn make_offer_spl_ix(
+    ctx: &AnchorContext,
+    maker: Pubkey,
+    asset: Pubkey,
+    payment_mint: Pubkey,
+    maker_payment_ata: Pubkey,
+    offer: Pubkey,
+    offer_vault_authority: Pubkey,
+    offer_vault_ata: Pubkey,
+    price: u64,
+) -> Instruction {
+    ctx.program()
+        .accounts(marketplace::accounts::MakeOfferSpl {
+            maker,
+            asset,
+            payment_mint,
+            maker_payment_ata,
+            offer_vault_authority,
+            offer_vault_ata,
+            offer,
+            associated_token_program: associated_token::ID,
+            system_program: system_program::ID,
+            token_program: token::ID,
+        })
+        .args(marketplace::instruction::MakeOfferSpl { price })
+        .instruction()
+        .unwrap()
+}
+
+pub fn cancel_offer_spl_ix(
+    ctx: &AnchorContext,
+    maker: Pubkey,
+    asset: Pubkey,
+    payment_mint: Pubkey,
+    offer: Pubkey,
+    offer_vault_authority: Pubkey,
+    offer_vault_ata: Pubkey,
+    maker_payment_ata: Pubkey,
+) -> Instruction {
+    ctx.program()
+        .accounts(marketplace::accounts::CancelOfferSpl {
+            maker,
+            asset,
+            payment_mint,
+            offer,
+            offer_vault_authority,
+            offer_vault_ata,
+            maker_payment_ata,
+            token_program: token::ID,
+        })
+        .args(marketplace::instruction::CancelOfferSpl {})
+        .instruction()
+        .unwrap()
+}
+
+pub fn accept_offer_spl_ix(
+    ctx: &AnchorContext,
+    maker: Pubkey,
+    taker: Pubkey,
+    asset: Pubkey,
+    collection: Option<Pubkey>,
+    marketplace: Pubkey,
+    payment_mint: Pubkey,
+    rewards_mint: Pubkey,
+    taker_rewards_ata: Pubkey,
+    taker_payment_ata: Pubkey,
+    treasury_authority: Pubkey,
+    treasury_ata: Pubkey,
+    offer: Pubkey,
+    offer_vault_authority: Pubkey,
+    offer_vault_ata: Pubkey,
+) -> Instruction {
+    let maker_payment_ata =
+        associated_token::get_associated_token_address(&maker, &payment_mint);
+
+    ctx.program()
+        .accounts(marketplace::accounts::AcceptOfferSpl {
+            taker,
+            maker,
+            asset,
+            collection,
+            marketplace,
+            payment_mint,
+            rewards_mint,
+            taker_rewards_ata,
+            taker_payment_ata,
+            maker_payment_ata,
+            treasury_authority,
+            treasury_ata,
+            offer,
+            offer_vault_authority,
+            offer_vault_ata,
+            mpl_core_program: MPL_CORE_ID,
+            associated_token_program: associated_token::ID,
+            system_program: system_program::ID,
+            token_program: token::ID,
+        })
+        .args(marketplace::instruction::AcceptOfferSpl {})
+        .instruction()
+        .unwrap()
+}
+
+pub fn withdraw_fee_spl_ix(
+    ctx: &AnchorContext,
+    admin: Pubkey,
+    marketplace: Pubkey,
+    payment_mint: Pubkey,
+    treasury_authority: Pubkey,
+    treasury_ata: Pubkey,
+    admin_payment_ata: Pubkey,
+) -> Instruction {
+    ctx.program()
+        .accounts(marketplace::accounts::WithdrawFeeSpl {
+            admin,
+            payment_mint,
+            treasury_authority,
+            treasury_ata,
+            admin_payment_ata,
+            marketplace,
+            associated_token_program: associated_token::ID,
+            system_program: system_program::ID,
+            token_program: token::ID,
+        })
+        .args(marketplace::instruction::WithdrawFeeSpl {})
+        .instruction()
+        .unwrap()
+}
+
 pub fn make_offer(
     ctx: &AnchorContext,
     maker: Pubkey,

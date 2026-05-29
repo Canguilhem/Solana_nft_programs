@@ -10,4 +10,8 @@ pub enum ErrorCode {
     InvalidPrice,
     #[msg("Unauthorized")]
     Unauthorized,
+    #[msg("Payment mint does not match listing or offer")]
+    PaymentMintMismatch,
+    #[msg("Invalid payment mint for this instruction")]
+    InvalidPaymentMint,
 }

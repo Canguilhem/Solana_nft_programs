@@ -2,18 +2,20 @@ mod common;
 
 use anchor_lang::solana_program::{msg, native_token::LAMPORTS_PER_SOL};
 use anchor_litesvm::{AssertionHelpers, Pubkey, Signer, TestHelpers};
-use anchor_spl::associated_token::get_associated_token_address;
-use marketplace::{Listing, Offer, OFFER};
+use anchor_spl::{
+    associated_token::get_associated_token_address,
+    token_interface::TokenAccount,
+};
+use marketplace::{Listing, Offer, NATIVE_PAYMENT_MINT};
 
 use common::{
-    assert_nft_owner, buy_ix, delist_ix, get_pdas, init_marketplace, initialize_ix, list_ix,
-    mint_test_nft, setup_marketplace_with_mpl_core, LISTING,
+    accept_offer_spl_ix, assert_nft_owner, buy_ix, buy_spl_ix, cancel_offer_spl_ix,
+    create_payment_mint, delist_ix, expected_split, fund_token_account, init_marketplace, list_ix,
+    list_spl_ix, make_offer_spl_ix, mint_test_nft, offer_pdas, offer_vault_ata,
+    setup_marketplace_with_mpl_core, treasury_token_pdas, withdraw_fee_spl_ix, LISTING,
 };
 
-use crate::common::{
-    constants::OFFER_VAULT,
-    instructions::{accept_offer, cancel_offer, make_offer, withdraw_fee}, setup::expected_split,
-};
+use crate::common::instructions::{accept_offer, cancel_offer, make_offer, withdraw_fee};
 
 #[test]
 fn test_initialize_marketplace() {
@@ -193,15 +195,7 @@ fn test_make_offer() {
 
     let bob_balance_before = ctx.svm.get_balance(&bob.pubkey()).unwrap();
 
-    let (offer, _) = Pubkey::find_program_address(
-        &[OFFER, nft.asset.as_ref(), bob.pubkey().as_ref()],
-        &marketplace::id(),
-    );
-
-    let (offer_vault, _) = Pubkey::find_program_address(
-        &[OFFER_VAULT, nft.asset.as_ref(), bob.pubkey().as_ref()],
-        &marketplace::id(),
-    );
+    let (offer, offer_vault) = offer_pdas(nft.asset, bob.pubkey(), NATIVE_PAYMENT_MINT);
 
     let ix = make_offer(
         &ctx,
@@ -245,15 +239,7 @@ fn test_cancel_offer() {
 
     let bob_balance_before = ctx.svm.get_balance(&bob.pubkey()).unwrap();
 
-    let (offer, _) = Pubkey::find_program_address(
-        &[OFFER, nft.asset.as_ref(), bob.pubkey().as_ref()],
-        &marketplace::id(),
-    );
-
-    let (offer_vault, _) = Pubkey::find_program_address(
-        &[OFFER_VAULT, nft.asset.as_ref(), bob.pubkey().as_ref()],
-        &marketplace::id(),
-    );
+    let (offer, offer_vault) = offer_pdas(nft.asset, bob.pubkey(), NATIVE_PAYMENT_MINT);
 
     let ix = make_offer(
         &ctx,
@@ -308,15 +294,7 @@ fn test_accept_offer() {
 
     let bob_balance_before = ctx.svm.get_balance(&bob.pubkey()).unwrap();
 
-    let (offer, _) = Pubkey::find_program_address(
-        &[OFFER, nft.asset.as_ref(), bob.pubkey().as_ref()],
-        &marketplace::id(),
-    );
-
-    let (offer_vault, _) = Pubkey::find_program_address(
-        &[OFFER_VAULT, nft.asset.as_ref(), bob.pubkey().as_ref()],
-        &marketplace::id(),
-    );
+    let (offer, offer_vault) = offer_pdas(nft.asset, bob.pubkey(), NATIVE_PAYMENT_MINT);
 
     let ix = make_offer(
         &ctx,
@@ -454,4 +432,436 @@ fn test_withdraw_fee() {
         let admin_after = ctx.svm.get_balance(&admin.pubkey()).unwrap();
 
         assert!(admin_after > admin_before)
+}
+
+#[test]
+fn test_buy_spl() {
+    let mut ctx = setup_marketplace_with_mpl_core();
+    let admin = ctx.payer().insecure_clone();
+    let (marketplace, _treasury, rewards_mint) = init_marketplace(&mut ctx);
+
+    let payment_mint = create_payment_mint(&mut ctx, &admin, 6);
+    let price: u64 = 1_000_000_000;
+
+    let alice = ctx
+        .svm
+        .create_funded_account(10 * LAMPORTS_PER_SOL)
+        .unwrap();
+    let bob = ctx
+        .svm
+        .create_funded_account(10 * LAMPORTS_PER_SOL)
+        .unwrap();
+
+    let nft = mint_test_nft(&mut ctx, &alice);
+
+    let bob_payment_ata = fund_token_account(
+        &mut ctx,
+        &payment_mint,
+        &bob,
+        &admin,
+        price.saturating_mul(2),
+    );
+
+    let (listing, _) =
+        Pubkey::find_program_address(&[LISTING, nft.asset.as_ref()], &marketplace::id());
+
+    let list_ix = list_spl_ix(
+        &ctx,
+        alice.pubkey(),
+        nft.asset,
+        Some(nft.collection),
+        listing,
+        payment_mint,
+        price,
+    );
+
+    ctx.execute_instruction(list_ix, &[&alice])
+        .unwrap()
+        .assert_success();
+
+    assert_nft_owner(&ctx, nft.asset, listing);
+
+    let list: Listing = ctx.get_account(&listing).unwrap();
+    assert_eq!(list.payment_mint, payment_mint);
+
+    let (treasury_authority, treasury_ata) = treasury_token_pdas(marketplace, payment_mint);
+    let taker_rewards_ata = get_associated_token_address(&bob.pubkey(), &rewards_mint);
+
+    let buy_ix = buy_spl_ix(
+        &mut ctx,
+        alice.pubkey(),
+        &bob,
+        nft.asset,
+        Some(nft.collection),
+        listing,
+        marketplace,
+        payment_mint,
+        bob_payment_ata,
+        treasury_authority,
+        treasury_ata,
+        rewards_mint,
+        taker_rewards_ata,
+    );
+
+    ctx.execute_instruction(buy_ix, &[&bob])
+        .unwrap()
+        .assert_success();
+
+    assert_nft_owner(&ctx, nft.asset, bob.pubkey());
+
+    let bob_payment: TokenAccount = ctx.get_account(&bob_payment_ata).unwrap();
+    let (fee, net) = expected_split(price);
+    assert_eq!(bob_payment.amount, price.saturating_mul(2) - price);
+
+    let treasury_payment: TokenAccount = ctx.get_account(&treasury_ata).unwrap();
+    assert_eq!(treasury_payment.amount, fee);
+
+    let alice_payment_ata = get_associated_token_address(&alice.pubkey(), &payment_mint);
+    let alice_payment: TokenAccount = ctx.get_account(&alice_payment_ata).unwrap();
+    assert_eq!(alice_payment.amount, net);
+}
+
+#[test]
+fn cancel_list_spl() {
+    let mut ctx = setup_marketplace_with_mpl_core();
+    let admin = ctx.payer().insecure_clone();
+    let (_marketplace, _treasury, _rewards_mint) = init_marketplace(&mut ctx);
+
+    let payment_mint = create_payment_mint(&mut ctx, &admin, 6);
+
+    let alice = ctx
+        .svm
+        .create_funded_account(10 * LAMPORTS_PER_SOL)
+        .unwrap();
+
+    let nft = mint_test_nft(&mut ctx, &alice);
+
+    let (listing, _) =
+        Pubkey::find_program_address(&[LISTING, nft.asset.as_ref()], &marketplace::id());
+
+    let ix = list_spl_ix(
+        &ctx,
+        alice.pubkey(),
+        nft.asset,
+        Some(nft.collection),
+        listing,
+        payment_mint,
+        1_000_000_000,
+    );
+
+    ctx.execute_instruction(ix, &[&alice])
+        .unwrap()
+        .assert_success();
+
+    assert_nft_owner(&ctx, nft.asset, listing);
+
+    let delist_ix = delist_ix(
+        &ctx,
+        alice.pubkey(),
+        nft.asset,
+        Some(nft.collection),
+        listing,
+    );
+    ctx.execute_instruction(delist_ix, &[&alice])
+        .unwrap()
+        .assert_success();
+
+    ctx.svm.assert_account_closed(&listing);
+    assert_nft_owner(&ctx, nft.asset, alice.pubkey());
+}
+
+#[test]
+fn test_make_offer_spl() {
+    let mut ctx = setup_marketplace_with_mpl_core();
+    let admin = ctx.payer().insecure_clone();
+
+    let payment_mint = create_payment_mint(&mut ctx, &admin, 6);
+    let price: u64 = 1_000_000_000;
+
+    let alice = ctx
+        .svm
+        .create_funded_account(10 * LAMPORTS_PER_SOL)
+        .unwrap();
+    let nft = mint_test_nft(&mut ctx, &alice);
+
+    let bob = ctx
+        .svm
+        .create_funded_account(10 * LAMPORTS_PER_SOL)
+        .unwrap();
+
+    let bob_payment_ata = fund_token_account(&mut ctx, &payment_mint, &bob, &admin, price);
+
+    let (offer, offer_vault_authority) = offer_pdas(nft.asset, bob.pubkey(), payment_mint);
+    let vault_ata = offer_vault_ata(offer_vault_authority, payment_mint);
+
+    let ix = make_offer_spl_ix(
+        &ctx,
+        bob.pubkey(),
+        nft.asset,
+        payment_mint,
+        bob_payment_ata,
+        offer,
+        offer_vault_authority,
+        vault_ata,
+        price,
+    );
+
+    ctx.execute_instruction(ix, &[&bob])
+        .unwrap()
+        .assert_success();
+
+    let offer_acc: Offer = ctx.get_account(&offer).unwrap();
+    assert_eq!(offer_acc.price, price);
+    assert_eq!(offer_acc.payment_mint, payment_mint);
+    assert_eq!(offer_acc.maker, bob.pubkey());
+
+    let bob_payment: TokenAccount = ctx.get_account(&bob_payment_ata).unwrap();
+    assert_eq!(bob_payment.amount, 0);
+
+    let vault: TokenAccount = ctx.get_account(&vault_ata).unwrap();
+    assert_eq!(vault.amount, price);
+}
+
+#[test]
+fn test_cancel_offer_spl() {
+    let mut ctx = setup_marketplace_with_mpl_core();
+    let admin = ctx.payer().insecure_clone();
+
+    let payment_mint = create_payment_mint(&mut ctx, &admin, 6);
+    let price: u64 = 1_000_000_000;
+
+    let alice = ctx
+        .svm
+        .create_funded_account(10 * LAMPORTS_PER_SOL)
+        .unwrap();
+    let nft = mint_test_nft(&mut ctx, &alice);
+
+    let bob = ctx
+        .svm
+        .create_funded_account(10 * LAMPORTS_PER_SOL)
+        .unwrap();
+
+    let bob_payment_ata = fund_token_account(&mut ctx, &payment_mint, &bob, &admin, price);
+
+    let (offer, offer_vault_authority) = offer_pdas(nft.asset, bob.pubkey(), payment_mint);
+    let vault_ata = offer_vault_ata(offer_vault_authority, payment_mint);
+
+    let ix = make_offer_spl_ix(
+        &ctx,
+        bob.pubkey(),
+        nft.asset,
+        payment_mint,
+        bob_payment_ata,
+        offer,
+        offer_vault_authority,
+        vault_ata,
+        price,
+    );
+
+    ctx.execute_instruction(ix, &[&bob])
+        .unwrap()
+        .assert_success();
+
+    let bob_after_offer: TokenAccount = ctx.get_account(&bob_payment_ata).unwrap();
+    assert_eq!(bob_after_offer.amount, 0);
+
+    let ix = cancel_offer_spl_ix(
+        &ctx,
+        bob.pubkey(),
+        nft.asset,
+        payment_mint,
+        offer,
+        offer_vault_authority,
+        vault_ata,
+        bob_payment_ata,
+    );
+
+    ctx.execute_instruction(ix, &[&bob])
+        .unwrap()
+        .assert_success();
+
+    ctx.svm.assert_account_closed(&offer);
+
+    let vault: TokenAccount = ctx.get_account(&vault_ata).unwrap();
+    assert_eq!(vault.amount, 0);
+
+    let bob_after_cancel: TokenAccount = ctx.get_account(&bob_payment_ata).unwrap();
+    assert_eq!(bob_after_cancel.amount, price);
+}
+
+#[test]
+fn test_accept_offer_spl() {
+    let mut ctx = setup_marketplace_with_mpl_core();
+    let admin = ctx.payer().insecure_clone();
+    let (marketplace, _treasury, rewards_mint) = init_marketplace(&mut ctx);
+
+    let payment_mint = create_payment_mint(&mut ctx, &admin, 6);
+    let price: u64 = 1_000_000_000;
+
+    let alice = ctx
+        .svm
+        .create_funded_account(10 * LAMPORTS_PER_SOL)
+        .unwrap();
+    let nft = mint_test_nft(&mut ctx, &alice);
+
+    let bob = ctx
+        .svm
+        .create_funded_account(10 * LAMPORTS_PER_SOL)
+        .unwrap();
+
+    let bob_payment_ata = fund_token_account(&mut ctx, &payment_mint, &bob, &admin, price);
+
+    let (offer, offer_vault_authority) = offer_pdas(nft.asset, bob.pubkey(), payment_mint);
+    let vault_ata = offer_vault_ata(offer_vault_authority, payment_mint);
+
+    let ix = make_offer_spl_ix(
+        &ctx,
+        bob.pubkey(),
+        nft.asset,
+        payment_mint,
+        bob_payment_ata,
+        offer,
+        offer_vault_authority,
+        vault_ata,
+        price,
+    );
+
+    ctx.execute_instruction(ix, &[&bob])
+        .unwrap()
+        .assert_success();
+
+    let (treasury_authority, treasury_ata) = treasury_token_pdas(marketplace, payment_mint);
+    let taker_rewards_ata = get_associated_token_address(&alice.pubkey(), &rewards_mint);
+    let taker_payment_ata = get_associated_token_address(&alice.pubkey(), &payment_mint);
+
+    let ix = accept_offer_spl_ix(
+        &ctx,
+        bob.pubkey(),
+        alice.pubkey(),
+        nft.asset,
+        Some(nft.collection),
+        marketplace,
+        payment_mint,
+        rewards_mint,
+        taker_rewards_ata,
+        taker_payment_ata,
+        treasury_authority,
+        treasury_ata,
+        offer,
+        offer_vault_authority,
+        vault_ata,
+    );
+
+    ctx.execute_instruction(ix, &[&alice])
+        .unwrap()
+        .assert_success();
+
+    ctx.svm.assert_account_closed(&offer);
+    assert_nft_owner(&ctx, nft.asset, bob.pubkey());
+
+    let (fee, net) = expected_split(price);
+    let vault: TokenAccount = ctx.get_account(&vault_ata).unwrap();
+    assert_eq!(vault.amount, 0);
+
+    let alice_payment: TokenAccount = ctx.get_account(&taker_payment_ata).unwrap();
+    assert_eq!(alice_payment.amount, net);
+
+    let treasury_payment: TokenAccount = ctx.get_account(&treasury_ata).unwrap();
+    assert_eq!(treasury_payment.amount, fee);
+}
+
+#[test]
+fn test_withdraw_fee_spl() {
+    let mut ctx = setup_marketplace_with_mpl_core();
+    let admin = ctx.payer().insecure_clone();
+    let (marketplace, _treasury, rewards_mint) = init_marketplace(&mut ctx);
+
+    let payment_mint = create_payment_mint(&mut ctx, &admin, 6);
+    let price: u64 = 1_000_000_000;
+
+    let alice = ctx
+        .svm
+        .create_funded_account(10 * LAMPORTS_PER_SOL)
+        .unwrap();
+    let bob = ctx
+        .svm
+        .create_funded_account(10 * LAMPORTS_PER_SOL)
+        .unwrap();
+
+    let nft = mint_test_nft(&mut ctx, &alice);
+
+    let bob_payment_ata = fund_token_account(
+        &mut ctx,
+        &payment_mint,
+        &bob,
+        &admin,
+        price.saturating_mul(2),
+    );
+
+    let (listing, _) =
+        Pubkey::find_program_address(&[LISTING, nft.asset.as_ref()], &marketplace::id());
+
+    ctx.execute_instruction(
+        list_spl_ix(
+            &ctx,
+            alice.pubkey(),
+            nft.asset,
+            Some(nft.collection),
+            listing,
+            payment_mint,
+            price,
+        ),
+        &[&alice],
+    )
+    .unwrap()
+    .assert_success();
+
+    let (treasury_authority, treasury_ata) = treasury_token_pdas(marketplace, payment_mint);
+    let taker_rewards_ata = get_associated_token_address(&bob.pubkey(), &rewards_mint);
+
+    let buy_ix = buy_spl_ix(
+        &mut ctx,
+        alice.pubkey(),
+        &bob,
+        nft.asset,
+        Some(nft.collection),
+        listing,
+        marketplace,
+        payment_mint,
+        bob_payment_ata,
+        treasury_authority,
+        treasury_ata,
+        rewards_mint,
+        taker_rewards_ata,
+    );
+
+    ctx.execute_instruction(buy_ix, &[&bob])
+        .unwrap()
+        .assert_success();
+
+    let (fee, _net) = expected_split(price);
+    let treasury_before: TokenAccount = ctx.get_account(&treasury_ata).unwrap();
+    assert_eq!(treasury_before.amount, fee);
+
+    let admin_payment_ata = get_associated_token_address(&admin.pubkey(), &payment_mint);
+
+    let ix = withdraw_fee_spl_ix(
+        &ctx,
+        admin.pubkey(),
+        marketplace,
+        payment_mint,
+        treasury_authority,
+        treasury_ata,
+        admin_payment_ata,
+    );
+
+    ctx.execute_instruction(ix, &[&admin])
+        .unwrap()
+        .assert_success();
+
+    let treasury_after: TokenAccount = ctx.get_account(&treasury_ata).unwrap();
+    assert_eq!(treasury_after.amount, 0);
+
+    let admin_after: TokenAccount = ctx.get_account(&admin_payment_ata).unwrap();
+    assert_eq!(admin_after.amount, fee);
 }

@@ -7,12 +7,12 @@ use anchor_spl::{
 use mpl_core::{instructions::TransferV1CpiBuilder, programs::MPL_CORE_ID};
 
 use crate::{
-    disburse_sol_payment, error::ErrorCode, is_native_payment, Listing, Marketplace, LISTING,
-    MARKETPLACE, REWARDS, TREASURY,
+    disburse_spl_payment, error::ErrorCode, is_native_payment, mint_decimals, Listing, Marketplace,
+    LISTING, MARKETPLACE, REWARDS, TREASURY,
 };
 
 #[derive(Accounts)]
-pub struct Buy<'info> {
+pub struct BuySpl<'info> {
     #[account(mut)]
     pub taker: Signer<'info>,
 
@@ -32,7 +32,7 @@ pub struct Buy<'info> {
         seeds = [MARKETPLACE, marketplace.name.as_bytes()],
         bump = marketplace.bump,
     )]
-    pub marketplace: Account<'info, Marketplace>,
+    pub marketplace: Box<Account<'info, Marketplace>>,
 
     #[account(
         mut,
@@ -41,23 +41,52 @@ pub struct Buy<'info> {
         bump = listing.bump,
         has_one = maker,
         has_one = asset,
-        constraint = is_native_payment(&listing.payment_mint) @ ErrorCode::InvalidPaymentMint,
+        constraint = !is_native_payment(&listing.payment_mint) @ ErrorCode::InvalidPaymentMint,
+        constraint = listing.payment_mint == payment_mint.key() @ ErrorCode::PaymentMintMismatch,
     )]
-    pub listing: Account<'info, Listing>,
+    pub listing: Box<Account<'info, Listing>>,
+
+    pub payment_mint: Box<InterfaceAccount<'info, Mint>>,
 
     #[account(
         mut,
-        seeds = [TREASURY, marketplace.key().as_ref()],
-        bump = marketplace.treasury_bump,
+        associated_token::mint = payment_mint,
+        associated_token::authority = taker,
+        associated_token::token_program = token_program,
     )]
-    pub treasury: SystemAccount<'info>,
+    pub taker_payment_ata: Box<InterfaceAccount<'info, TokenAccount>>,
+
+    #[account(
+        init_if_needed,
+        payer = taker,
+        associated_token::mint = payment_mint,
+        associated_token::authority = maker,
+        associated_token::token_program = token_program,
+    )]
+    pub maker_payment_ata: Box<InterfaceAccount<'info, TokenAccount>>,
+
+    /// CHECK: PDA authority for per-mint treasury ATA
+    #[account(
+        seeds = [TREASURY, marketplace.key().as_ref(), payment_mint.key().as_ref()],
+        bump,
+    )]
+    pub treasury_authority: UncheckedAccount<'info>,
+
+    #[account(
+        init_if_needed,
+        payer = taker,
+        associated_token::mint = payment_mint,
+        associated_token::authority = treasury_authority,
+        associated_token::token_program = token_program,
+    )]
+    pub treasury_ata: Box<InterfaceAccount<'info, TokenAccount>>,
 
     #[account(
         mut,
         seeds = [REWARDS, marketplace.key().as_ref()],
         bump = marketplace.rewards_bump,
     )]
-    pub rewards_mint: InterfaceAccount<'info, Mint>,
+    pub rewards_mint: Box<InterfaceAccount<'info, Mint>>,
 
     #[account(
         init_if_needed,
@@ -66,7 +95,7 @@ pub struct Buy<'info> {
         associated_token::authority = taker,
         associated_token::token_program = token_program,
     )]
-    pub taker_rewards_ata: InterfaceAccount<'info, TokenAccount>,
+    pub taker_rewards_ata: Box<InterfaceAccount<'info, TokenAccount>>,
 
     /// CHECK: confirm program_id
     #[account(address = MPL_CORE_ID)]
@@ -77,15 +106,19 @@ pub struct Buy<'info> {
     pub token_program: Interface<'info, TokenInterface>,
 }
 
-impl<'info> Buy<'info> {
-    pub fn send_sol(&mut self) -> Result<()> {
-        disburse_sol_payment(
-            &self.system_program.to_account_info(),
+impl<'info> BuySpl<'info> {
+    pub fn send_tokens(&mut self) -> Result<()> {
+        let decimals = mint_decimals(&self.payment_mint)?;
+        disburse_spl_payment(
+            &self.token_program.to_account_info(),
+            &self.taker_payment_ata.to_account_info(),
+            &self.payment_mint.to_account_info(),
+            &self.maker_payment_ata.to_account_info(),
+            &self.treasury_ata.to_account_info(),
             &self.taker.to_account_info(),
-            &self.maker.to_account_info(),
-            &self.treasury.to_account_info(),
             self.listing.price,
             self.marketplace.fee,
+            decimals,
         )
     }
 
