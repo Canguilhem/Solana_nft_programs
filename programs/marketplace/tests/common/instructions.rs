@@ -145,8 +145,7 @@ pub fn buy_spl_ix(
     rewards_mint: Pubkey,
     taker_rewards_ata: Pubkey,
 ) -> Instruction {
-    let maker_payment_ata =
-        associated_token::get_associated_token_address(&maker, &payment_mint);
+    let maker_payment_ata = associated_token::get_associated_token_address(&maker, &payment_mint);
 
     ctx.program()
         .accounts(marketplace::accounts::BuySpl {
@@ -245,8 +244,7 @@ pub fn accept_offer_spl_ix(
     offer_vault_authority: Pubkey,
     offer_vault_ata: Pubkey,
 ) -> Instruction {
-    let maker_payment_ata =
-        associated_token::get_associated_token_address(&maker, &payment_mint);
+    let maker_payment_ata = associated_token::get_associated_token_address(&maker, &payment_mint);
 
     ctx.program()
         .accounts(marketplace::accounts::AcceptOfferSpl {

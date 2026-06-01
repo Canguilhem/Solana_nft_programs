@@ -54,12 +54,7 @@ pub fn init_marketplace(ctx: &mut AnchorContext) -> (Pubkey, Pubkey, Pubkey) {
 
 pub fn offer_pdas(asset: Pubkey, maker: Pubkey, payment_mint: Pubkey) -> (Pubkey, Pubkey) {
     let (offer, _) = Pubkey::find_program_address(
-        &[
-            OFFER,
-            asset.as_ref(),
-            maker.as_ref(),
-            payment_mint.as_ref(),
-        ],
+        &[OFFER, asset.as_ref(), maker.as_ref(), payment_mint.as_ref()],
         &marketplace::id(),
     );
     let (offer_vault, _) = Pubkey::find_program_address(
@@ -105,9 +100,7 @@ pub fn fund_token_account(
         .svm
         .create_associated_token_account(mint, owner)
         .unwrap();
-    ctx.svm
-        .mint_to(mint, &ata, authority, amount)
-        .unwrap();
+    ctx.svm.mint_to(mint, &ata, authority, amount).unwrap();
     ata
 }
 

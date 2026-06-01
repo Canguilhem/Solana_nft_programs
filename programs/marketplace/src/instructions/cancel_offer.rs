@@ -2,8 +2,8 @@ use anchor_lang::prelude::*;
 use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
 
 use crate::{
-    error::ErrorCode, is_native_payment, refund_spl_from_vault, transfer_sol_from, Offer, OFFER,
-    OFFER_VAULT, NATIVE_PAYMENT_MINT,
+    error::ErrorCode, is_native_payment, refund_spl_from_vault, transfer_sol_from, Offer,
+    NATIVE_PAYMENT_MINT, OFFER, OFFER_VAULT,
 };
 
 #[derive(Accounts)]

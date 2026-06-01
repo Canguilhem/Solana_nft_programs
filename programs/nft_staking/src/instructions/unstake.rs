@@ -7,7 +7,7 @@ use anchor_spl::{
 use mpl_core::{
     accounts::{BaseAssetV1, BaseCollectionV1},
     fetch_plugin,
-    instructions::{UpdatePluginV1CpiBuilder},
+    instructions::UpdatePluginV1CpiBuilder,
     programs::MPL_CORE_ID,
     types::{Attribute, Attributes, FreezeDelegate, Plugin, PluginType, UpdateAuthority},
 };

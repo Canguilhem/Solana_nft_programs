@@ -2,10 +2,7 @@ mod common;
 
 use anchor_lang::solana_program::{msg, native_token::LAMPORTS_PER_SOL};
 use anchor_litesvm::{AssertionHelpers, Pubkey, Signer, TestHelpers};
-use anchor_spl::{
-    associated_token::get_associated_token_address,
-    token_interface::TokenAccount,
-};
+use anchor_spl::{associated_token::get_associated_token_address, token_interface::TokenAccount};
 use marketplace::{Listing, Offer, NATIVE_PAYMENT_MINT};
 
 use common::{
@@ -353,7 +350,6 @@ fn test_accept_offer() {
     assert!(alice_before_accept < alice_after_accept)
 }
 
-
 #[test]
 fn test_withdraw_fee() {
     let mut ctx = setup_marketplace_with_mpl_core();
@@ -417,21 +413,16 @@ fn test_withdraw_fee() {
     assert_nft_owner(&ctx, nft.asset, bob.pubkey());
 
     let admin_before = ctx.svm.get_balance(&admin.pubkey()).unwrap();
-    
-    let ix = withdraw_fee(
-        &ctx,
-        admin.pubkey(),
-        marketplace,
-        treasury
-    );
+
+    let ix = withdraw_fee(&ctx, admin.pubkey(), marketplace, treasury);
 
     ctx.execute_instruction(ix, &[&admin])
         .unwrap()
         .assert_success();
 
-        let admin_after = ctx.svm.get_balance(&admin.pubkey()).unwrap();
+    let admin_after = ctx.svm.get_balance(&admin.pubkey()).unwrap();
 
-        assert!(admin_after > admin_before)
+    assert!(admin_after > admin_before)
 }
 
 #[test]
