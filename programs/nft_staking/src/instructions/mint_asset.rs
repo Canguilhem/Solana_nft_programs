@@ -35,9 +35,11 @@ impl<'info> MintAsset<'info> {
         ]];
 
         CreateV2CpiBuilder::new(&self.mpl_core_program.to_account_info())
+            .asset(&self.asset.to_account_info())
             .collection(Some(&self.collection.to_account_info()))
+            .authority(Some(&self.update_authority.to_account_info()))
             .payer(&self.user.to_account_info())
-            .update_authority(Some(&self.update_authority.to_account_info()))
+            .update_authority(None)
             .system_program(&self.system_program.to_account_info())
             .name(name)
             .uri(uri)

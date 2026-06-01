@@ -7,7 +7,7 @@ use anchor_spl::{
 use mpl_core::{
     accounts::{BaseAssetV1, BaseCollectionV1},
     fetch_plugin,
-    instructions::{AddPluginV1CpiBuilder, UpdatePluginV1CpiBuilder},
+    instructions::{UpdatePluginV1CpiBuilder},
     programs::MPL_CORE_ID,
     types::{Attribute, Attributes, FreezeDelegate, Plugin, PluginType, UpdateAuthority},
 };
@@ -46,7 +46,7 @@ pub struct Unstake<'info> {
 
     #[account(
         mut,
-        seeds=[REWARDS_MINT, config.key().as_ref()],
+        seeds=[REWARDS_MINT, collection.key().as_ref()],
         bump= config.rewards_bump
     )]
     pub rewards_mint: InterfaceAccount<'info, Mint>,
@@ -161,7 +161,7 @@ impl<'info> Unstake<'info> {
             .invoke_signed(signer_seeds)?;
 
         // UnFreeze the asset
-        AddPluginV1CpiBuilder::new(&self.mpl_core_program.to_account_info())
+        UpdatePluginV1CpiBuilder::new(&self.mpl_core_program.to_account_info())
             .asset(&self.asset.to_account_info())
             .collection(Some(&self.collection.to_account_info()))
             .payer(&self.owner.to_account_info())

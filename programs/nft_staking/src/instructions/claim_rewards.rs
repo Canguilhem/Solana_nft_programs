@@ -45,7 +45,7 @@ pub struct ClaimRewards<'info> {
 
     #[account(
         mut,
-        seeds=[REWARDS_MINT, config.key().as_ref()],
+        seeds=[REWARDS_MINT, collection.key().as_ref()],
         bump= config.rewards_bump
     )]
     pub rewards_mint: InterfaceAccount<'info, Mint>,
