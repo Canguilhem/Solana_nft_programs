@@ -122,15 +122,37 @@ impl<'info> Stake<'info> {
         };
 
         // Freeze the asset
-        AddPluginV1CpiBuilder::new(&self.mpl_core_program.to_account_info())
-            .asset(&self.asset.to_account_info())
-            .collection(Some(&self.collection.to_account_info()))
-            .payer(&self.owner.to_account_info())
-            .authority(Some(&self.owner.to_account_info()))
-            .system_program(&self.system_program.to_account_info())
-            .plugin(Plugin::FreezeDelegate(FreezeDelegate { frozen: true }))
-            .init_authority(PluginAuthority::UpdateAuthority)
-            .invoke()?;
+
+        let existing_freeze = fetch_plugin::<BaseAssetV1, FreezeDelegate>(
+            &self.asset.to_account_info(),
+            PluginType::FreezeDelegate,
+        )
+        .ok();
+        match existing_freeze {
+            None => {
+                // First time staking this NFT
+                AddPluginV1CpiBuilder::new(&self.mpl_core_program.to_account_info())
+                    .asset(&self.asset.to_account_info())
+                    .collection(Some(&self.collection.to_account_info()))
+                    .payer(&self.owner.to_account_info())
+                    .authority(Some(&self.owner.to_account_info()))
+                    .system_program(&self.system_program.to_account_info())
+                    .plugin(Plugin::FreezeDelegate(FreezeDelegate { frozen: true }))
+                    .init_authority(PluginAuthority::UpdateAuthority)
+                    .invoke()?;
+            }
+            Some(_) => {
+                // update if plugin already exists
+                UpdatePluginV1CpiBuilder::new(&self.mpl_core_program.to_account_info())
+                    .asset(&self.asset.to_account_info())
+                    .collection(Some(&self.collection.to_account_info()))
+                    .payer(&self.owner.to_account_info())
+                    .authority(Some(&self.update_authority.to_account_info()))
+                    .plugin(Plugin::FreezeDelegate(FreezeDelegate { frozen: true }))
+                    .system_program(&self.system_program.to_account_info())
+                    .invoke_signed(signer_seeds)?;
+            }
+        }
 
         self.config.staked_count = self
             .config

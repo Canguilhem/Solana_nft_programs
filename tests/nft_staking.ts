@@ -190,11 +190,6 @@ describe("staking tests", () => {
       absoluteTimestamp:
         currentSec * 1000 + TIME_TRAVEL_IN_DAYS * MILLISECONDS_PER_DAY,
     });
-
-    const slot2 = await provider.connection.getSlot();
-    const currentSec2 = (await provider.connection.getBlockTime(slot2))!;
-
-    console.log(`jumped from ${slot} -> ${slot2}`);
   });
 
   it("Claim rewards", async () => {
@@ -235,5 +230,23 @@ describe("staking tests", () => {
       })
       .rpc();
     console.log("unstake signature: ", tx);
+  });
+
+  it("Re-Stake the same asset", async () => {
+    const tx = await program.methods
+      .stake()
+      .accountsStrict({
+        owner: provider.wallet.publicKey,
+        config,
+        asset: nftKeypair.publicKey,
+        collection: collectionKeypair.publicKey,
+        updateAuthority,
+        systemProgram: SystemProgram.programId,
+        mplCoreProgram: MPL_CORE_PROGRAM_ID,
+      })
+      // .signers([nftKeypair])
+      .rpc();
+
+    console.log("staking signature: ", tx);
   });
 });
